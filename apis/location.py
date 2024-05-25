@@ -1,7 +1,8 @@
 from typing import Optional
 
-from core import database
 from fastapi import APIRouter, Query
+
+from core import database
 from schemas import location
 
 router = APIRouter()
@@ -14,23 +15,11 @@ router = APIRouter()
 )
 async def get_locations(
     limit: int = Query(500, description="検索結果の取得上限"),
-    location_start_at: Optional[str] = Query(
-        None, description="検索k開始日時(yyyy-MM-dd hh24:mi:ss)"
-    ),
-    location_end_at: Optional[str] = Query(
-        None, description="検索終了日時(yyyy-MM-dd hh24:mi:ss"
-    ),
+    location_start_at: Optional[str] = Query(None, description="検索k開始日時(yyyy-MM-dd hh24:mi:ss)"),
+    location_end_at: Optional[str] = Query(None, description="検索終了日時(yyyy-MM-dd hh24:mi:ss"),
 ):
-    q_location_start_at = (
-        ""
-        if location_start_at is None
-        else "AND location_at >= '" + location_start_at + "'"
-    )
-    q_location_end_at = (
-        ""
-        if location_end_at is None
-        else "AND location_at <= '" + location_end_at + "'"
-    )
+    q_location_start_at = "" if location_start_at is None else "AND location_at >= '" + location_start_at + "'"
+    q_location_end_at = "" if location_end_at is None else "AND location_at <= '" + location_end_at + "'"
 
     sql = f"""
   SELECT jsonb_build_object(
@@ -100,4 +89,5 @@ async def post_location(data: location.Location):
                 ),
             )
 
+    return {"status": 200}
     return {"status": 200}

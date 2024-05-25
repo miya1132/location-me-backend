@@ -24,7 +24,7 @@ app.add_middleware(
 
 @app.get("/")
 async def get_root():
-    return {"Hello": "Worldd"}
+    return {"Hello": "World"}
 
 
 # リクエストの中身を取得して表示
