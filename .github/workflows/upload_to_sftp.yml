@@ -21,4 +21,4 @@ jobs:
           password: "Humanway=1974"
           compress: true
           localDir: "app"
-          remoteDir: "/var/location-me/backend/"
+          remoteDir: "/var/location-me/backend/app"
