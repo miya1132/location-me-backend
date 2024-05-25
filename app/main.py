@@ -1,8 +1,25 @@
+import json
+
 import uvicorn
 from apis import location as location_router
 from core.config import Config
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+from pywebpush import WebPushException, webpush
+
+VAPID_PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE55z_vWUdMpuzpd-zgxGUlOUl1pdCIfUP6So63YKBNs6ubx5YGTXfV37Yev6agslP6Mf0Qbxl8eVBo91s_tVvbA=="  # noqa: E501
+VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
+VAPID_EMAIL = "mailto:miya1132@gmail.com"
+
+
+class Subscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+
+subscriptions = []
 
 app = FastAPI()
 
@@ -24,6 +41,41 @@ app.add_middleware(
 app.include_router(location_router.router, prefix="/locations", tags=["場所"])
 
 
+@app.post("/subscribe")
+async def subscribe(subscription: Subscription):
+    subscriptions.append(subscription.dict())
+    return JSONResponse(status_code=201, content={"message": "Subscription received"})
+
+
+@app.post("/send_push")
+async def send_push():
+    invalid_subscriptions = []
+    print("call send_push --------------------------------------------------")
+    for subscription in subscriptions:
+        print("call webpush --------------------------------------------------")
+        print(subscription)
+        try:
+            webpush(
+                subscription_info=subscription,
+                data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
+                # vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_private_key="private_key.pem",
+                vapid_claims={"sub": VAPID_EMAIL},
+            )
+        except WebPushException as ex:
+            print(f"Failed to send push: {ex}")
+            if ex.response.status_code == 410:  # HTTP 410 Gone
+                invalid_subscriptions.append(subscription)
+            else:
+                raise HTTPException(status_code=500, detail=str(ex))
+
+    for invalid_subscription in invalid_subscriptions:
+        print(f"Removing invalid subscription: {invalid_subscription}")
+        subscriptions.remove(invalid_subscription)
+
+    return JSONResponse(status_code=200, content={"message": "Push notifications sent"})
+
+
 # リクエストの中身を取得して表示
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
@@ -36,4 +88,5 @@ async def add_process_time_header(request: Request, call_next):
 
 
 if __name__ == "__main__":
+    uvicorn.run("main:app", host="127.0.0.1", port=5000, log_level="info", workers=4)
     uvicorn.run("main:app", host="127.0.0.1", port=5000, log_level="info", workers=4)
