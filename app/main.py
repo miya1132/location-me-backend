@@ -1,8 +1,8 @@
 import uvicorn
+from apis import location as location_router
+from core.config import Config
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-
-from core.config import Config
 
 app = FastAPI()
 
@@ -21,10 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-@app.get("/")
-async def get_root():
-    return {"Hello": "World"}
+app.include_router(location_router.router, prefix="/locations", tags=["場所"])
 
 
 # リクエストの中身を取得して表示
@@ -39,5 +36,4 @@ async def add_process_time_header(request: Request, call_next):
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=5000, log_level="info", workers=4)
     uvicorn.run("main:app", host="127.0.0.1", port=5000, log_level="info", workers=4)

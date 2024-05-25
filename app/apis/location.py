@@ -1,15 +1,14 @@
 from typing import Optional
 
-from fastapi import APIRouter, Query
-
 from core import database
+from fastapi import APIRouter, Query
 from schemas import location
 
 router = APIRouter()
 
 
 @router.get(
-    "/",
+    "",
     summary="場所",
     description="場所の取得",
 )
@@ -61,11 +60,12 @@ async def get_locations(
 
 
 @router.post(
-    "/",
+    "",
     summary="場所",
     description="場所の登録",
 )
 async def post_location(data: location.Location):
+    print("post location")
     with database.get_connection() as connection:
         with connection.cursor() as cursor:
             # レコードを挿入
@@ -89,5 +89,4 @@ async def post_location(data: location.Location):
                 ),
             )
 
-    return {"status": 200}
     return {"status": 200}

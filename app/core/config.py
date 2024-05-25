@@ -7,9 +7,7 @@ class BaseConfig:
 
 class DevelopmentConfig(BaseConfig):
     DEBUG = True
-    DATABASE_URI = (
-        "postgresql://postgres:Humanway=1974@location_me_db:5432/location_me_db"
-    )
+    DATABASE_URI = "postgresql://postgres:Humanway=1974@location_me_db:5432/location_me_db"
 
 
 class ProductionConfig(BaseConfig):
