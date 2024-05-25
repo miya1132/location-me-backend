@@ -1,0 +1,21 @@
+name: SFTPを使用してデプロイ
+on:
+  # workflow_dispatch:
+  push:
+    branches: [main]
+  # pull_request:
+  #   branches: [main]
+
+jobs:
+  Upload-to-SFTP:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📂 SFTP uploader
+        uses: wangyucode/sftp-upload-action@v2.0.2
+        with:
+          host: "cowboy-t.net"
+          username: "root"
+          password: "Humanway=1974"
+          compress: true
+          localDir: "app"
+          remoteDir: "/var/location-me/backend/"
