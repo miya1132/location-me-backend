@@ -10,6 +10,9 @@ jobs:
   Upload-to-SFTP:
     runs-on: ubuntu-latest
     steps:
+      - name: 🚚 Get latest code
+        uses: actions/checkout@v4
+
       - name: 📂 SFTP uploader
         uses: wangyucode/sftp-upload-action@v2.0.2
         with:
@@ -17,5 +20,5 @@ jobs:
           username: "root"
           password: "Humanway=1974"
           compress: true
-          localDir: "/app"
+          localDir: "app"
           remoteDir: "/var/location-me/backend/"
