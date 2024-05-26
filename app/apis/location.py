@@ -3,7 +3,7 @@ from typing import Optional
 
 from core import database, util
 from fastapi import APIRouter, Query
-from pywebpush import webpush
+from pywebpush import WebPushException, webpush
 from schemas import location
 
 router = APIRouter()
@@ -119,12 +119,15 @@ async def post_location(data: location.Location):
     else:
         print("Notifications found:", notificationFilter)
         for notification in notificationFilter:
-            webpush(
-                subscription_info=notification.subscription.dict(),
-                data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
-                vapid_private_key="private_key.pem",
-                vapid_claims={"sub": "mailto:miya1132@gmail.com"},
-            )
+            try:
+                webpush(
+                    subscription_info=notification.subscription.dict(),
+                    data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
+                    vapid_private_key="private_key.pem",
+                    vapid_claims={"sub": "mailto:miya1132@gmail.com"},
+                )
+            except WebPushException as ex:
+                print(f"Failed to send push: {ex}")
 
     return {"status": 200}
 
