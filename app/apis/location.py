@@ -1,7 +1,9 @@
+import json
 from typing import Optional
 
-from core import database
+from core import database, util
 from fastapi import APIRouter, Query
+from pywebpush import webpush
 from schemas import location
 
 router = APIRouter()
@@ -64,6 +66,10 @@ async def get_locations(
     summary="場所",
     description="場所の登録",
 )
+
+# async def post_location(
+#     data: location.Location, notifications: list[subscription.Notification] = Depends(util.get_notifications)
+# ):
 async def post_location(data: location.Location):
     print("post location")
     with database.get_connection() as connection:
@@ -89,4 +95,61 @@ async def post_location(data: location.Location):
                 ),
             )
 
+    notifications = util.get_notifications()
+    print(notifications)
+    notification = notifications[0]
+    print(notification.data["latitude"])
+    latitude = notification.data["latitude"]
+    longitude = notification.data["longitude"]
+    dist = haversine(float(latitude), float(longitude), float(data.latitude), float(data.longitude))
+    print(dist)
+    notificationFilter = list(
+        filter(
+            lambda x: haversine(
+                float(x.data["latitude"]), float(x.data["longitude"]), float(data.latitude), float(data.longitude)
+            )
+            <= 1000,
+            notifications,
+        )
+    )
+
+    if not notificationFilter:
+        print("No notifications found.")
+    else:
+        print("Notifications found:", notificationFilter)
+        for notification in notificationFilter:
+            webpush(
+                subscription_info=notification.subscription.dict(),
+                data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
+                vapid_private_key="private_key.pem",
+                vapid_claims={"sub": "mailto:miya1132@gmail.com"},
+            )
+
     return {"status": 200}
+
+
+def haversine(lon1, lat1, lon2, lat2):
+    import math
+
+    # 地球の半径（km）
+    R = 6371.0
+
+    # ラジアンに変換
+    lon1 = math.radians(lon1)
+    lat1 = math.radians(lat1)
+    lon2 = math.radians(lon2)
+    lat2 = math.radians(lat2)
+
+    # 差の計算
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+
+    # ハーバーサインの公式による距離の計算
+    a = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance_km = R * c
+
+    # 距離をメートルに変換
+    distance_m = distance_km * 1000
+
+    return distance_m
