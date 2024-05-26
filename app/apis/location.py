@@ -96,13 +96,14 @@ async def post_location(data: location.Location):
             )
 
     notifications = util.get_notifications()
-    print(notifications)
-    notification = notifications[0]
-    print(notification.data["latitude"])
-    latitude = notification.data["latitude"]
-    longitude = notification.data["longitude"]
-    dist = haversine(float(latitude), float(longitude), float(data.latitude), float(data.longitude))
-    print(dist)
+    # print(notifications)
+    # notification = notifications[0]
+    # print(notification.data["latitude"])
+    # latitude = notification.data["latitude"]
+    # longitude = notification.data["longitude"]
+    # dist = haversine(float(latitude), float(longitude), float(data.latitude), float(data.longitude))
+    # print(dist)
+
     notificationFilter = list(
         filter(
             lambda x: haversine(
