@@ -29,7 +29,7 @@ if Config.DEBUG is True:
 else:
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-# CPRS対策
+# CORS対策
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
