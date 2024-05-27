@@ -109,7 +109,7 @@ async def post_location(data: location.Location):
             lambda x: haversine(
                 float(x.data["latitude"]), float(x.data["longitude"]), float(data.latitude), float(data.longitude)
             )
-            <= 1000,
+            <= int(x.data["radius"]),
             notifications,
         )
     )

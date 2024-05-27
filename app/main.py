@@ -54,13 +54,19 @@ async def send_push():
     invalid_notifications = []
 
     for notification in notifications:
-        print(notification.subscription)
-        print(notification.data)
+        # print(notification.subscription)
+        # print(notification.data)
+        print("call webpush ---------------------------------------------------------")
         try:
             webpush(
                 # subscription_info=subscription,
                 subscription_info=notification.subscription.dict(),
-                data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
+                data=json.dumps(
+                    {
+                        "title": "LocationMe",
+                        "message": "お友達が接近しています！！",
+                    }
+                ),
                 vapid_private_key="private_key.pem",
                 vapid_claims={"sub": VAPID_EMAIL},
             )
