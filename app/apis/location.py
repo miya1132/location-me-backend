@@ -2,6 +2,7 @@ import json
 from typing import Optional
 
 from core import database, util
+from core.config import Config
 from fastapi import APIRouter, Query
 from pywebpush import WebPushException, webpush
 from schemas import location
@@ -96,38 +97,40 @@ async def post_location(data: location.Location):
             )
 
     notifications = util.get_notifications()
-    # print(notifications)
-    # notification = notifications[0]
-    # print(notification.data["latitude"])
-    # latitude = notification.data["latitude"]
-    # longitude = notification.data["longitude"]
-    # dist = haversine(float(latitude), float(longitude), float(data.latitude), float(data.longitude))
-    # print(dist)
 
-    notificationFilter = list(
-        filter(
-            lambda x: haversine(
-                float(x.data["latitude"]), float(x.data["longitude"]), float(data.latitude), float(data.longitude)
-            )
-            <= int(x.data["radius"]),
-            notifications,
+    unsubscribe_notifications = []
+    for notification in notifications:
+        latigude = notification.data["latitude"]
+        longitude = notification.data["longitude"]
+        radius = notification.data["radius"]
+        distince = haversine(float(latigude), float(longitude), float(data.latitude), float(data.longitude))
+        print(
+            f"""
+                alat:{latigude} alng:{longitude}
+                blat{float(data.latitude)} blng:{float(data.longitude)}
+                radius:{radius} distince:{int(distince)}
+            """
         )
-    )
 
-    if not notificationFilter:
-        print("No notifications found.")
-    else:
-        print("Notifications found:", notificationFilter)
-        for notification in notificationFilter:
+        if distince <= radius:
             try:
                 webpush(
                     subscription_info=notification.subscription.dict(),
-                    data=json.dumps({"title": "LocationMe", "body": "お友達が接近しています！！"}),
+                    data=json.dumps(
+                        {"title": "LocationMe", "message": f"お友達が{int(distince)}mまで接近しています！！"}
+                    ),
                     vapid_private_key="private_key.pem",
-                    vapid_claims={"sub": "mailto:miya1132@gmail.com"},
+                    vapid_claims={"sub": Config.VAPID_EMAIL},
                 )
+
+                # 購読を解除用に追加
+                unsubscribe_notifications.append(notification)
             except WebPushException as ex:
                 print(f"Failed to send push: {ex}")
+
+    for unsubscribe_notification in unsubscribe_notifications:
+        print(f"Removing invalid subscription: {unsubscribe_notifications}")
+        notifications.remove(unsubscribe_notification)
 
     return {"status": 200}
 

@@ -9,10 +9,9 @@ from fastapi.responses import JSONResponse
 from pywebpush import WebPushException, webpush
 from schemas import subscription as Schemas
 
-VAPID_PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE55z_vWUdMpuzpd-zgxGUlOUl1pdCIfUP6So63YKBNs6ubx5YGTXfV37Yev6agslP6Mf0Qbxl8eVBo91s_tVvbA=="  # noqa: E501
-VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
-VAPID_EMAIL = "mailto:miya1132@gmail.com"
-
+# VAPID_PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE55z_vWUdMpuzpd-zgxGUlOUl1pdCIfUP6So63YKBNs6ubx5YGTXfV37Yev6agslP6Mf0Qbxl8eVBo91s_tVvbA=="  # noqa: E501
+# VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
+# VAPID_EMAIL = "mailto:miya1132@gmail.com"
 
 notifications: list[Schemas.Notification] = []
 
@@ -35,6 +34,18 @@ app.add_middleware(
 
 app.include_router(location_router.router, prefix="/locations", tags=["場所"])
 
+notifications: list[Schemas.Notification] = []
+
+
+@app.post("/unscribe")
+async def unsubscribe(notification_data: dict):
+    global notifications
+
+    subscription = Schemas.Subscription(**notification_data["subscription"])
+    notifications = [notification for notification in notifications if notification.subscription != subscription]
+
+    return JSONResponse(status_code=201, content={"message": "UnSubscription received"})
+
 
 @app.post("/subscribe")
 async def subscribe(notification_data: dict):
@@ -49,14 +60,14 @@ async def subscribe(notification_data: dict):
     return JSONResponse(status_code=201, content={"message": "Subscription received"})
 
 
-@app.post("/send_push")
+@app.post("/push")
 async def send_push():
     invalid_notifications = []
 
     for notification in notifications:
-        # print(notification.subscription)
         # print(notification.data)
         print("call webpush ---------------------------------------------------------")
+        print(notification.subscription)
         try:
             webpush(
                 # subscription_info=subscription,
@@ -64,11 +75,11 @@ async def send_push():
                 data=json.dumps(
                     {
                         "title": "LocationMe",
-                        "message": "お友達が接近しています！！",
+                        "message": "プッシュ通知の確認用です。",
                     }
                 ),
                 vapid_private_key="private_key.pem",
-                vapid_claims={"sub": VAPID_EMAIL},
+                vapid_claims={"sub": Config.VAPID_EMAIL},
             )
         except WebPushException as ex:
             print(f"Failed to send push: {ex}")
