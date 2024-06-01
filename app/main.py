@@ -1,9 +1,13 @@
+import csv
+import io
 import json
 
+# import httpx
 import uvicorn
 from apis import location as location_router
+from core import database
 from core.config import Config
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pywebpush import WebPushException, webpush
@@ -35,6 +39,58 @@ app.add_middleware(
 app.include_router(location_router.router, prefix="/locations", tags=["場所"])
 
 notifications: list[Schemas.Notification] = []
+
+
+@app.post("/upload-csv/")
+async def upload_csv(file: UploadFile = File(...)):
+    content = await file.read()
+    # CSVデータを処理するロジックをここに追加
+    # print(content)
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            try:
+                # テーブルをtruncateしてIDをリセット
+                cursor.execute("TRUNCATE TABLE locations RESTART IDENTITY")
+                cursor.execute("ALTER SEQUENCE locations_id_seq RESTART WITH 1")
+
+                # CSVデータを読み込み、データベースにインポート
+                import_data = csv.reader(io.StringIO(content.decode("utf-8")))
+                next(import_data)  # ヘッダー行をスキップ
+                for row in import_data:
+                    cursor.execute(
+                        """
+                        INSERT INTO locations
+                            (speed,heading,accuracy,altitude,latitude,longitude,location_at,speed_accuracy)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        row[1:],  # ID以外の要素を指定,
+                    )
+
+            except Exception as e:
+                return JSONResponse(status_code=500, content={"message": str(e)})
+
+            # cursor.execute(sql)
+            # results = cursor.fetchall()[0][0]
+
+    return JSONResponse(status_code=200, content={"message": "Upload csv received"})
+
+
+# @app.get("/google_api_directions")
+# async def google_api_directions(origin: str, destination: str):
+#     apiKey = "AIzaSyBnEH0x0SchB0ox-IBkLwXlWzWxHtYBMi4"
+#     # # 出発地点の住所または緯度経度
+#     # origin = "33.5256198,130.42547847"
+#     # # 到着地点の住所または緯度経度
+#     # destination = "33.5799096985,130.420675277"
+#     apiUrl = (
+#         f"https://maps.googleapis.com/maps/api/directions/json?origin={origin}&destination={destination}&key={apiKey}"
+#     )
+#     print(apiUrl)
+#     async with httpx.AsyncClient() as client:
+#         response = await client.get(apiUrl)
+#         if response.status_code != 200:
+#             raise HTTPException(status_code=response.status_code, detail="Failed to fetch data from Google Map API")
+#         return response.json()
 
 
 @app.post("/unscribe")

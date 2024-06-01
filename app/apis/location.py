@@ -117,7 +117,10 @@ async def post_location(data: location.Location):
                 webpush(
                     subscription_info=notification.subscription.dict(),
                     data=json.dumps(
-                        {"title": "LocationMe", "message": f"お友達が{int(distince)}mまで接近しています！！"}
+                        {
+                            "title": "LocationMe",
+                            "message": f"{int(distince)}mまで接近中！！急いで準備してください！！",
+                        }
                     ),
                     vapid_private_key="private_key.pem",
                     vapid_claims={"sub": Config.VAPID_EMAIL},
