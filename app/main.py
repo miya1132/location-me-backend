@@ -93,11 +93,24 @@ async def upload_csv(file: UploadFile = File(...)):
 #         return response.json()
 
 
-@app.post("/unscribe")
-async def unsubscribe(notification_data: dict):
+@app.post("/exist_scribe")
+async def exist_scribe(notification: dict):
     global notifications
 
-    subscription = Schemas.Subscription(**notification_data["subscription"])
+    subscription = Schemas.Subscription(**notification)
+    targets = [notification for notification in notifications if notification.subscription == subscription]
+
+    if len(targets) > 0:
+        return JSONResponse(status_code=200, content={"mode": targets[0].mode, "data": targets[0].data})
+    else:
+        return JSONResponse(status_code=200, content=None)
+
+
+@app.post("/unscribe")
+async def unsubscribe(notification: dict):
+    global notifications
+
+    subscription = Schemas.Subscription(**notification["subscription"])
     notifications = [notification for notification in notifications if notification.subscription != subscription]
 
     return JSONResponse(status_code=201, content={"message": "UnSubscription received"})
@@ -110,9 +123,25 @@ async def subscribe(notification_data: dict):
     notification = Schemas.Notification(
         subscription=subscription, data=notification_data["data"], mode=notification_data["mode"]
     )
-    print(notification)
+    # print(notification)
 
+    # 既存の購読リストから同じエンドポイントを持つ購読を削除
+    global notifications
+    notifications = [
+        n
+        for n in notifications
+        if n.subscription.endpoint != subscription.endpoint and n.mode != notification_data["mode"]
+    ]
+
+    # 新しい購読をリストに追加
     notifications.append(notification)
+
+    # print("------------------------------------------------------")
+    # for notification in notifications:
+    #     print(notification.subscription)
+    #     print(notification_data["data"])
+    #     print(notification_data["mode"])
+    # print("------------------------------------------------------")
     return JSONResponse(status_code=201, content={"message": "Subscription received"})
 
 

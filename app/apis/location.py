@@ -3,6 +3,7 @@ from typing import Optional
 
 from core import database, util
 from core.config import Config
+from core.constants import Constants
 from fastapi import APIRouter, Query
 from pywebpush import WebPushException, webpush
 from schemas import location
@@ -24,41 +25,44 @@ async def get_locations(
     q_location_end_at = "" if location_end_at is None else "AND location_at <= '" + location_end_at + "'"
 
     sql = f"""
-  SELECT jsonb_build_object(
-      'type',     'FeatureCollection',
-      'features', jsonb_agg(features.feature)
-  )
-  FROM (
-    SELECT jsonb_build_object(
-      'type',       'Feature',
-      'id',         id,
-      'geometry',   ST_AsGeoJSON(geom)::jsonb,
-      'properties', to_jsonb(inputs) - 'geom'
-    ) AS feature
-    FROM (
-      SELECT
-        id,
-        location_at,
-        latitude,
-        longitude,
-        accuracy,
-        altitude,
-        speed,
-        speed_accuracy,
-        heading,
-        ST_GeogFromText('SRID=4326;POINT(' || longitude || ' ' || latitude || ')')::geometry geom
-      FROM locations
-      WHERE 1 = 1 {q_location_start_at} {q_location_end_at}
-      ORDER BY location_at desc
-      LIMIT {limit}
-      ) inputs) features;
-  """
+            SELECT jsonb_build_object(
+                'type',     'FeatureCollection',
+                'features', jsonb_agg(features.feature)
+            )
+            FROM (
+                SELECT jsonb_build_object(
+                'type',       'Feature',
+                'id',         id,
+                'geometry',   ST_AsGeoJSON(geom)::jsonb,
+                'properties', to_jsonb(inputs) - 'geom'
+                ) AS feature
+                FROM (
+                SELECT
+                    id,
+                    location_at,
+                    latitude,
+                    longitude,
+                    accuracy,
+                    altitude,
+                    speed,
+                    speed_accuracy,
+                    heading,
+                    ST_GeogFromText('SRID=4326;POINT(' || longitude || ' ' || latitude || ')')::geometry geom
+                FROM locations
+                WHERE 1 = 1 {q_location_start_at} {q_location_end_at}
+                ORDER BY location_at desc
+                LIMIT {limit}
+                ) inputs) features;
+            """
 
     with database.get_connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(sql)
             results = cursor.fetchall()[0][0]
 
+    print("---------------------------------------")
+    print(results)
+    print("---------------------------------------")
     return results
 
 
@@ -81,7 +85,6 @@ async def post_location(data: location.Location):
                 location_at, latitude, longitude, accuracy, altitude, speed, speed_accuracy, heading)
               values (%s, %s, %s , %s, %s, %s, %s, %s)
               """
-            print(sql)
             cursor.execute(
                 sql,
                 (
@@ -99,11 +102,13 @@ async def post_location(data: location.Location):
     notifications = util.get_notifications()
 
     unsubscribe_notifications = []
-    for notification in notifications:
-        latigude = notification.data["latitude"]
-        longitude = notification.data["longitude"]
-        radius = notification.data["radius"]
+    targets = [n for n in notifications if n.mode == Constants.subscribe_mode.PROXIMITY_GUIDE]
+    for target in targets:
+        latigude = target.data["latitude"]
+        longitude = target.data["longitude"]
+        radius = target.data["radius"]
         distince = haversine(float(latigude), float(longitude), float(data.latitude), float(data.longitude))
+
         print(
             f"""
                 alat:{latigude} alng:{longitude}
@@ -115,7 +120,7 @@ async def post_location(data: location.Location):
         if distince <= radius:
             try:
                 webpush(
-                    subscription_info=notification.subscription.dict(),
+                    subscription_info=target.subscription.dict(),
                     data=json.dumps(
                         {
                             "title": "LocationMe",
@@ -127,7 +132,7 @@ async def post_location(data: location.Location):
                 )
 
                 # 購読を解除用に追加
-                unsubscribe_notifications.append(notification)
+                unsubscribe_notifications.append(target)
             except WebPushException as ex:
                 print(f"Failed to send push: {ex}")
 
