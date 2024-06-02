@@ -82,8 +82,8 @@ async def post_location(data: location.Location):
             # レコードを挿入
             sql = """
               insert into locations(
-                location_at, latitude, longitude, accuracy, altitude, speed, speed_accuracy, heading)
-              values (%s, %s, %s , %s, %s, %s, %s, %s)
+                location_at, latitude, longitude, accuracy, altitude, speed, speed_accuracy, heading, device_id)
+              values (%s, %s, %s , %s, %s, %s, %s, %s, %s)
               """
             cursor.execute(
                 sql,
@@ -96,6 +96,7 @@ async def post_location(data: location.Location):
                     data.speed,
                     data.speed_accuracy,
                     data.heading,
+                    data.device_id,
                 ),
             )
 

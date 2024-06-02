@@ -10,3 +10,4 @@ class Location(BaseModel):
     speed: str
     speed_accuracy: str
     heading: str
+    device_id: str
