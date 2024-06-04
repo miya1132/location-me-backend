@@ -4,7 +4,8 @@ import json
 
 # import httpx
 import uvicorn
-from apis import location as location_router
+from apis import devices as devices_router
+from apis import locations as locations_router
 from core import database
 from core.config import Config
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -36,7 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(location_router.router, prefix="/locations", tags=["場所"])
+app.include_router(locations_router.router, prefix="/locations", tags=["場所"])
+app.include_router(devices_router.router, prefix="/devices", tags=["子機"])
 
 notifications: list[Schemas.Notification] = []
 
@@ -60,8 +62,8 @@ async def upload_csv(file: UploadFile = File(...)):
                     cursor.execute(
                         """
                         INSERT INTO locations
-                            (speed,heading,accuracy,altitude,latitude,longitude,location_at,speed_accuracy)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            (mode,device_id,location_at,latitude,longitude,heading,accuracy,altitude,speed,speed_accuracy)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         row[1:],  # ID以外の要素を指定,
                     )

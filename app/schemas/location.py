@@ -11,3 +11,4 @@ class Location(BaseModel):
     speed_accuracy: str
     heading: str
     device_id: str
+    mode: int
