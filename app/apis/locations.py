@@ -161,17 +161,13 @@ async def post_location(data: location.Location):
 engine = create_engine("postgresql://postgres:Humanway=1974@location_me_db:5432/location_me_db")
 
 
-@router.get("/walking")
+@router.get("/walkings")
 def get_data(
     location_start_at: Optional[str] = Query(None, description="検索開始日時(yyyy-MM-dd hh24:mi:ss)"),
     location_end_at: Optional[str] = Query(None, description="検索終了日時(yyyy-MM-dd hh24:mi:ss"),
 ):
     q_location_start_at = "" if location_start_at is None else "AND location_at >= '" + location_start_at + "'"
     q_location_end_at = "" if location_end_at is None else "AND location_at <= '" + location_end_at + "'"
-
-    print("----------------------------------------")
-    print(f"device_id:{database.get_device('8971e8f5b3a5fe48')}")
-    print("----------------------------------------")
 
     try:
         start_time = time.time()

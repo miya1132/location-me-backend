@@ -1,0 +1,3 @@
+stocks:
+  # database_url: "postgresql://postgres:Humanway=1974@127.0.0.1:5432/location_me_db"
+  database_url: "postgresql://postgres:Humanway=1974@location_me_db:5432/location_me_db"

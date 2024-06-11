@@ -1,20 +1,23 @@
 import csv
 import io
 import json
+from datetime import datetime
 
-# import httpx
+import pandas_datareader.data as data
+import talib as ta
 import uvicorn
 from apis import devices as devices_router
 from apis import locations as locations_router
 from core import database
 from core.config import Config
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from dateutil.relativedelta import relativedelta
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from pywebpush import WebPushException, webpush
 from schemas import subscription as Schemas
 
-# VAPID_PUBLIC_KEY = "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE55z_vWUdMpuzpd-zgxGUlOUl1pdCIfUP6So63YKBNs6ubx5YGTXfV37Yev6agslP6Mf0Qbxl8eVBo91s_tVvbA=="  # noqa: E501
 # VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
 # VAPID_EMAIL = "mailto:miya1132@gmail.com"
 
@@ -43,11 +46,166 @@ app.include_router(devices_router.router, prefix="/devices", tags=["子機"])
 notifications: list[Schemas.Notification] = []
 
 
+# TODO：apisに移動させる
+class Tracking(BaseModel):
+    path: str
+    access_at: str
+    user_agent: str
+    language: str
+    screen_width: int
+    screen_height: int
+    city: str
+    region: str
+    country: str
+    latitude: float
+    longitude: float
+
+
+@app.post("/tracking")
+async def post_tracking(tracking: Tracking):
+    sql = """
+            insert into trackings(
+                path,access_at,user_agent,language,screen_width,screen_height,city,region,country,latitude,longitude)
+            values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                sql,
+                (
+                    tracking.path,
+                    tracking.access_at,
+                    tracking.user_agent,
+                    tracking.language,
+                    tracking.screen_width,
+                    tracking.screen_height,
+                    tracking.city,
+                    tracking.region,
+                    tracking.country,
+                    tracking.latitude,
+                    tracking.longitude,
+                ),
+            )
+    return JSONResponse(status_code=200, content=None)
+
+
+def set_ticker(ticker):
+    df = data.DataReader(ticker, "stooq").sort_index()
+
+    # 単純移動平均線設定
+    close = df["Close"]
+    df["sma5"], df["sma25"], df["sma75"] = ta.SMA(close, 5), ta.SMA(close, 25), ta.SMA(close, 75)
+
+    # ゴールデンクロス、デッドクロスの列を追加
+    df["golden_cross"] = (df["sma5"] > df["sma25"]) & (df["sma5"].shift(1) <= df["sma25"].shift(1))
+    df["dead_cross"] = (df["sma5"] < df["sma25"]) & (df["sma5"].shift(1) >= df["sma25"].shift(1))
+
+    # ゴールデンクロスが発生した日を取得
+    golden_cross_dates = df[df["golden_cross"]].index
+    days_since_golden_cross = 0
+    # ゴールデンクロスが発生してからの経過日数を計算して新しい列を追加
+    df["days_since_golden_cross"] = 0
+    for i in range(1, len(df)):
+        if df.index[i] in golden_cross_dates:
+            days_since_golden_cross = 0
+        else:
+            days_since_golden_cross += 1
+        df.at[df.index[i], "days_since_golden_cross"] = days_since_golden_cross
+
+    # デッドクロスが発生した日を取得
+    dead_cross_dates = df[df["dead_cross"]].index
+
+    # デッドクロスが発生してからの経過日数を計算して新しい列を追加
+    df["days_since_dead_cross"] = 0
+    days_since_dead_cross = 0
+    for i in range(1, len(df)):
+        if df.index[i] in dead_cross_dates:
+            days_since_dead_cross = 0
+        else:
+            days_since_dead_cross += 1
+        df.at[df.index[i], "days_since_dead_cross"] = days_since_dead_cross
+
+    df = df.dropna()  # NaNが含まれる行を削除
+
+    print(df.tail())
+
+    # データベースに登録
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            sql = "INSERT INTO tickers(ticker) values(%s)"
+            cursor.execute(sql, (ticker,))
+
+            df["Date"] = df.index.astype(str)
+            records = df.to_dict(orient="records")
+
+            sql = (
+                "INSERT INTO stocks"
+                "(stock_at,ticker,close,open,high,low,volume,sma5,sma25,sma75,golden_cross,dead_cross,days_since_golden_cross,days_since_dead_cross)"
+                "values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            )
+            for record in records:
+                print(record)
+                cursor.execute(
+                    sql,
+                    (
+                        record["Date"],
+                        ticker,
+                        record["Close"],
+                        record["Open"],
+                        record["High"],
+                        record["Low"],
+                        record["Volume"],
+                        record["sma5"],
+                        record["sma25"],
+                        record["sma75"],
+                        record["golden_cross"],
+                        record["dead_cross"],
+                        record["days_since_golden_cross"],
+                        record["days_since_dead_cross"],
+                    ),
+                )
+
+
+# TODO：apisに移動させる
+@app.get("/stocks")
+async def get_stocks(ticker: str, months: int = Query(3)):
+    end = datetime.today()
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            sql = "SELECT * FROM tickers WHERE ticker=%s"
+            cursor.execute(sql, (ticker,))
+            results = cursor.fetchone()
+            if results is None:
+                set_ticker(ticker)
+
+            sql = "SELECT * FROM stocks WHERE ticker=%s and stock_at >= %s ORDER BY stock_at"
+            cursor.execute(sql, (ticker, (end - relativedelta(months=months)).strftime("%Y-%m-%d")))
+            results = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description]
+            stocks = [dict(zip(column_names, row)) for row in results]
+    return stocks
+    # # 本日の日付を取得
+    # end = datetime.today()
+
+    # df = data.DataReader(ticker, "stooq").sort_index()
+    # close = df["Close"]
+    # # 単純移動平均線
+    # df["sma5"], df["sma25"], df["sma75"] = ta.SMA(close, 5), ta.SMA(close, 25), ta.SMA(close, 75)
+    # print(df.head())
+
+    # df = df.dropna()  # NaNが含まれる行を削除
+    # # 辞書型に変換
+    # df["Date"] = df.index.astype(str)
+    # df = df[df.index >= (end - relativedelta(months=3)).strftime("%Y-%m-%d")]
+    # result_dict = df.to_dict(orient="records")
+    # return JSONResponse(content=result_dict)
+
+
+# TODO：locationsに移動
 @app.post("/upload-csv/")
 async def upload_csv(file: UploadFile = File(...)):
     content = await file.read()
     # CSVデータを処理するロジックをここに追加
-    # print(content)
     with database.get_connection() as connection:
         with connection.cursor() as cursor:
             try:
@@ -71,9 +229,6 @@ async def upload_csv(file: UploadFile = File(...)):
             except Exception as e:
                 return JSONResponse(status_code=500, content={"message": str(e)})
 
-            # cursor.execute(sql)
-            # results = cursor.fetchall()[0][0]
-
     return JSONResponse(status_code=200, content={"message": "Upload csv received"})
 
 
@@ -93,6 +248,36 @@ async def upload_csv(file: UploadFile = File(...)):
 #         if response.status_code != 200:
 #             raise HTTPException(status_code=response.status_code, detail="Failed to fetch data from Google Map API")
 #         return response.json()
+
+
+# @app.get("/weather")
+# async def get_weather():
+#     locations = [
+#         {"latitude": 33.606389, "longitude": 130.417968, "name": "福岡"},
+#         {"latitude": 33.249351, "longitude": 130.298792, "name": "佐賀"},
+#         {"latitude": 33.5256198, "longitude": 130.42547847, "name": "片縄"},
+#     ]
+#     # longitude = 130.42547847
+
+#     for location in locations:
+#         apiUrl = (
+#             f"https://api.open-meteo.com/v1/forecast?"
+#             f"past_days=1&forecast_days=0&"
+#             f"latitude={location['latitude']}&longitude={location['longitude']}&"
+#             f"timezone=Asia%2FTokyo&"
+#             f"daily=weather_code,temperature_2m_max,temperature_2m_min&"
+#             f"hourly=weather_code,temperature_2m,precipitation_probability,relative_humidity_2m"
+#         )
+#         print(apiUrl)
+#         async with httpx.AsyncClient() as client:
+#             response = await client.get(apiUrl)
+#             print(response.json())
+
+#             if response.status_code != 200:
+#                 raise HTTPException(status_code=response.status_code, detail="Failed to fetch data from Open Metro API")  # noqa: E501
+#             # return response.json()
+
+#     return {"status": 200}
 
 
 @app.post("/exist_scribe")
@@ -138,12 +323,6 @@ async def subscribe(notification_data: dict):
     # 新しい購読をリストに追加
     notifications.append(notification)
 
-    # print("------------------------------------------------------")
-    # for notification in notifications:
-    #     print(notification.subscription)
-    #     print(notification_data["data"])
-    #     print(notification_data["mode"])
-    # print("------------------------------------------------------")
     return JSONResponse(status_code=201, content={"message": "Subscription received"})
 
 
