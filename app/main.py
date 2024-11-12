@@ -295,9 +295,7 @@ def set_ticker(ticker):
             book_value_per_share = info.get("bookValue", None)
             cash_per_share = info.get("totalCashPerShare", None)
             free_cashflow_per_share = (
-                info.get("freeCashflow") / info.get("sharesOutstanding")
-                if info.get("freeCashflow") and info.get("sharesOutstanding")
-                else None
+                info.get("freeCashflow") / info.get("sharesOutstanding") if info.get("freeCashflow") and info.get("sharesOutstanding") else None
             )
             dividend_per_share = info.get("dividendRate", None)
 
@@ -568,18 +566,12 @@ async def unsubscribe(notification: dict):
 async def subscribe(notification_data: dict):
     # 辞書型のデータをNotificationオブジェクトに変換
     subscription = Schemas.Subscription(**notification_data["subscription"])
-    notification = Schemas.Notification(
-        subscription=subscription, data=notification_data["data"], mode=notification_data["mode"]
-    )
+    notification = Schemas.Notification(subscription=subscription, data=notification_data["data"], mode=notification_data["mode"])
     # print(notification)
 
     # 既存の購読リストから同じエンドポイントを持つ購読を削除
     global notifications
-    notifications = [
-        n
-        for n in notifications
-        if n.subscription.endpoint != subscription.endpoint and n.mode != notification_data["mode"]
-    ]
+    notifications = [n for n in notifications if n.subscription.endpoint != subscription.endpoint and n.mode != notification_data["mode"]]
 
     # 新しい購読をリストに追加
     notifications.append(notification)
