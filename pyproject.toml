@@ -12,7 +12,7 @@ select = [
 ]
 ignore = []
 # 1行の最大文字数
-line-length = 120
+line-length = 150
 
 extend-ignore = [
     "D100",
