@@ -57,4 +57,3 @@ async def delete_device(id):
             cursor.execute(f"delete from devices where id = {id}")
 
     return JSONResponse(status_code=200, content={"message": "Device successfully deleted."})
-    return JSONResponse(status_code=200, content={"message": "Device successfully deleted."})

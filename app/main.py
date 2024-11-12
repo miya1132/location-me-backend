@@ -1,19 +1,22 @@
 import csv
 import io
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas_datareader.data as data
 import talib as ta
 import uvicorn
+import yfinance as yf
 from apis import devices as devices_router
 from apis import locations as locations_router
+from apis import sensor_data as sensor_data_router
 from core import database
 from core.config import Config
 from dateutil.relativedelta import relativedelta
-from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from googletrans import Translator
 from pydantic import BaseModel
 from pywebpush import WebPushException, webpush
 from schemas import subscription as Schemas
@@ -21,7 +24,7 @@ from schemas import subscription as Schemas
 # VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
 # VAPID_EMAIL = "mailto:miya1132@gmail.com"
 
-notifications: list[Schemas.Notification] = []
+# notifications: list[Schemas.Notification] = []
 
 app = FastAPI()
 
@@ -42,6 +45,7 @@ app.add_middleware(
 
 app.include_router(locations_router.router, prefix="/locations", tags=["場所"])
 app.include_router(devices_router.router, prefix="/devices", tags=["子機"])
+app.include_router(sensor_data_router.router, prefix="/sensor_data", tags=["センサー"])
 
 notifications: list[Schemas.Notification] = []
 
@@ -89,6 +93,110 @@ async def post_tracking(tracking: Tracking):
     return JSONResponse(status_code=200, content=None)
 
 
+def get_consecutive_dividend_increase_years(ticker):
+    stock = yf.Ticker(ticker)
+    div_history = stock.dividends
+
+    # 配当履歴がない場合
+    if div_history.empty:
+        return 0
+
+    # 年ごとの配当金合計を計算
+    div_history_yearly = div_history.resample("Y").sum()
+
+    # 連続増配年数をカウント
+    increase_years = 0
+    current_streak = 0
+
+    for i in range(1, len(div_history_yearly)):
+        if div_history_yearly[i] > div_history_yearly[i - 1]:
+            current_streak += 1
+            increase_years = max(increase_years, current_streak)
+        else:
+            current_streak = 0
+
+    return increase_years
+
+
+def update_stocks_task():
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            # テーブルをtruncateしてIDをリセット
+            cursor.execute("TRUNCATE TABLE stocks RESTART IDENTITY")
+            cursor.execute("ALTER SEQUENCE stocks_id_seq RESTART WITH 1")
+
+            cursor.execute("SELECT * FROM tickers")
+            tickers = cursor.fetchall()
+
+            cursor.execute("TRUNCATE TABLE tickers RESTART IDENTITY")
+            cursor.execute("ALTER SEQUENCE tickers_id_seq RESTART WITH 1")
+
+            connection.commit()
+            for ticker in tickers:
+                set_ticker(ticker[1])
+
+
+# curl -X 'GET' 'https://cowboy-t.net:8080/stocks/update' -H 'accept: application/json'で定期実行
+@app.get("/stocks/update")
+async def update_stocks(background_tasks: BackgroundTasks):
+    background_tasks.add_task(update_stocks_task)
+    return {"message": "Update_stocks_task task started."}
+
+
+@app.get("/exchange")
+async def get_exchange():
+    return yf.Ticker("USDJPY=X").history(period="1d").Close[0]
+
+
+@app.get("/tickers/{ticker}")
+def get_ticker(ticker):
+    sql = "SELECT * FROM tickers WHERE ticker = %s"
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(sql, (ticker,))
+            ticker_tuple = cursor.fetchone()
+            if ticker_tuple:
+                column_names = [desc[0] for desc in cursor.description]
+                return dict(zip(column_names, ticker_tuple))
+            else:
+                return JSONResponse(status_code=404, content={"message": "No ticker is registered."})
+
+
+# ETF用
+def get_dividend_yield(ticker):
+    # ETFの情報を取得します
+    etf = yf.Ticker(ticker)
+
+    # 現在の日付を取得します
+    end_date = datetime.now()
+
+    # 1年前の日付を計算します
+    start_date = end_date - timedelta(days=365)
+
+    # 1年間の配当データを取得します
+    dividend_data = etf.history(start=start_date, end=end_date, actions=True)
+
+    # 配当データから最新の配当金額を取得します
+    latest_dividend = dividend_data["Dividends"].sum()
+
+    # 最新の株価を取得します
+    latest_price = etf.history(period="1d")["Close"].iloc[-1]
+
+    # 分配金利回りを計算します
+    dividend_yield = latest_dividend / latest_price
+
+    # 配当の数をカウントします
+    number_of_dividends = dividend_data[dividend_data["Dividends"] > 0]["Dividends"].count()
+
+    # 配当が支払われた月を取得します
+    dividend_months = dividend_data[dividend_data["Dividends"] > 0].index.month.unique()
+    sorted_dividend_months = sorted(dividend_months)
+    str_dividend_months = [str(sorted_dividend_month) for sorted_dividend_month in sorted_dividend_months]
+
+    # 分配金利回りを計算します
+    return (dividend_yield, int(number_of_dividends), ", ".join(str_dividend_months))
+
+
 def set_ticker(ticker):
     df = data.DataReader(ticker, "stooq").sort_index()
 
@@ -132,8 +240,142 @@ def set_ticker(ticker):
     # データベースに登録
     with database.get_connection() as connection:
         with connection.cursor() as cursor:
-            sql = "INSERT INTO tickers(ticker) values(%s)"
-            cursor.execute(sql, (ticker,))
+            # 株の情報を取得する
+            ticker_info = yf.Ticker(ticker.replace(".JP", ".T"))
+            info = ticker_info.info
+
+            long_business_summary = info.get("longBusinessSummary", None)
+            if long_business_summary == "N/A":
+                long_business_summary = None
+            long_business_summary_jp = None
+
+            if long_business_summary is not None:
+                translator = Translator()
+                translate = translator.translate(long_business_summary, src="en", dest="ja")
+                long_business_summary_jp = translate.text
+
+            website = info.get("website", None)
+
+            price_to_sales_trailing12_months = info.get("priceToSalesTrailing12Months", None)
+            gross_profit_margin = info.get("grossMargins", None)
+            roe = info.get("returnOnEquity", None)
+
+            short_name = info.get("shortName", None)
+            long_name = info.get("longName", None)
+            quote_type = info.get("quoteType", None)
+            sector = info.get("sector", None)
+            industry = info.get("industry", None)
+            forward_pe = info.get("forwardPE", None)
+            trailing_pe = info.get("trailingPE", None)
+            price_to_book = info.get("priceToBook", None)
+
+            dividend_yield = info.get("dividendYield", None)
+            number_of_dividends = None
+            dividend_months = None
+            if quote_type == "ETF":
+                dividend = get_dividend_yield(ticker.replace(".JP", ".T"))
+                dividend_yield = dividend[0]
+                number_of_dividends = dividend[1]
+                dividend_months = dividend[2]
+            elif quote_type == "EQUITY":
+                dividend = get_dividend_yield(ticker.replace(".JP", ".T"))
+                number_of_dividends = dividend[1]
+                dividend_months = dividend[2]
+
+            revenue_growth = info.get("revenueGrowth", None)
+            earnings_growth = info.get("earningsGrowth", None)
+            current_ratio = info.get("currentRatio", None)
+
+            equity_ratio = None
+            total_assets = None
+            stockholders_equity = None
+
+            revenue_per_share = info.get("revenuePerShare", None)
+            eps = info.get("trailingEps")
+            book_value_per_share = info.get("bookValue", None)
+            cash_per_share = info.get("totalCashPerShare", None)
+            free_cashflow_per_share = (
+                info.get("freeCashflow") / info.get("sharesOutstanding")
+                if info.get("freeCashflow") and info.get("sharesOutstanding")
+                else None
+            )
+            dividend_per_share = info.get("dividendRate", None)
+
+            if quote_type == "ETF":
+                total_assets = info.get("totalAssets", None)
+            else:
+                balance_sheet = ticker_info.balance_sheet
+                if not balance_sheet.empty:
+                    stockholders_equity = balance_sheet.loc["Stockholders Equity"].iloc[0]
+                    total_assets = balance_sheet.loc["Total Assets"].iloc[0]
+                    equity_ratio = stockholders_equity / total_assets
+                else:
+                    stockholders_equity = None
+                    total_assets = None
+                    equity_ratio = None
+
+            fund_family = info.get("fundFamily", None)
+            three_year_average_return = info.get("threeYearAverageReturn", None)
+            five_year_average_return = info.get("fiveYearAverageReturn", None)
+
+            fifty_two_week_high = info.get("fiftyTwoWeekHigh", None)
+            fifty_two_week_low = info.get("fiftyTwoWeekLow", None)
+
+            currency = info.get("currency", None)
+
+            consecutive_increase_years = get_consecutive_dividend_increase_years(ticker)
+
+            sql = (
+                "INSERT INTO tickers"
+                "(ticker,short_name,long_name,quote_type,sector,industry,forward_pe,trailing_pe,price_to_book,dividend_yield,"
+                "revenue_growth,earnings_growth,current_ratio,equity_ratio,stockholders_equity,total_assets,fund_family,three_year_average_return,"
+                "five_year_average_return,long_business_summary,long_business_summary_jp,website,price_to_sales_trailing12_months,"
+                "gross_profit_margin,roe,revenue_per_share,eps,book_value_per_share,cash_per_share,free_cashflow_per_share,dividend_per_share,"
+                "fifty_two_week_high,fifty_two_week_low,number_of_dividends,dividend_months,currency,consecutive_increase_years)"
+                "values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            )
+            cursor.execute(
+                sql,
+                (
+                    ticker,
+                    short_name,
+                    long_name,
+                    quote_type,
+                    sector,
+                    industry,
+                    forward_pe,
+                    trailing_pe,
+                    price_to_book,
+                    dividend_yield,
+                    revenue_growth,
+                    earnings_growth,
+                    current_ratio,
+                    equity_ratio,
+                    stockholders_equity,
+                    total_assets,
+                    fund_family,
+                    three_year_average_return,
+                    five_year_average_return,
+                    long_business_summary,
+                    long_business_summary_jp,
+                    website,
+                    price_to_sales_trailing12_months,
+                    gross_profit_margin,
+                    roe,
+                    revenue_per_share,
+                    eps,
+                    book_value_per_share,
+                    cash_per_share,
+                    free_cashflow_per_share,
+                    dividend_per_share,
+                    fifty_two_week_high,
+                    fifty_two_week_low,
+                    number_of_dividends,
+                    dividend_months,
+                    currency,
+                    consecutive_increase_years,
+                ),
+            )
 
             df["Date"] = df.index.astype(str)
             records = df.to_dict(orient="records")
@@ -144,7 +386,7 @@ def set_ticker(ticker):
                 "values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
             )
             for record in records:
-                print(record)
+                # print(record)
                 cursor.execute(
                     sql,
                     (
@@ -165,8 +407,27 @@ def set_ticker(ticker):
                     ),
                 )
 
+            # 現在値と前日値を更新
+            current_value = records[-1]["Close"]
+            previos_value = records[-2]["Close"]
+            sql = "UPDATE tickers set current_value=%s, previos_value=%s WHERE ticker=%s"
+            cursor.execute(sql, (current_value, previos_value, ticker))
+            connection.commit()
+
 
 # TODO：apisに移動させる
+@app.get("/tickers")
+async def get_tickers():
+    with database.get_connection() as connection:
+        with connection.cursor() as cursor:
+            sql = "SELECT * FROM tickers"
+            cursor.execute(sql)
+            results = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description]
+            tickers = [dict(zip(column_names, row)) for row in results]
+    return tickers
+
+
 @app.get("/stocks")
 async def get_stocks(ticker: str, months: int = Query(3)):
     end = datetime.today()

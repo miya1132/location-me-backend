@@ -29,7 +29,7 @@ def initialize_ticker(ticker: str, connection: psycopg2.extensions.connection, c
     print("initialize_ticker")
     print(f"call data {ticker}")
     df = data.DataReader(ticker, "stooq").sort_index()
-    print(f"call end data {ticker} {df.head()}")
+    print(f"call end data {ticker} {df.tail()}")
 
     # 単純移動平均線設定
     close = df["Close"]
