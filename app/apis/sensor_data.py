@@ -43,13 +43,17 @@ async def read_devices(
 
 @router.post("")
 async def create_sensor_data(data: sensor_data.SensorData):
+    # async def create_sensor_data(dataset: List[sensor_data.SensorData]):
     with database.get_connection() as connection:
         with connection.cursor() as cursor:
+            inserted_id = 0
+
+            # for data in dataset:  # 配列の各要素に対して処理を行う
             # レコードを挿入
             sql = """
-              insert into sensor_data(sensor_type, retrieved_at, mac_address, data)
-              values (%s, %s, %s, %s)
-              """
+            insert into sensor_data(sensor_type, retrieved_at, mac_address, data)
+            values (%s, %s, %s, %s)
+            """
 
             cursor.execute(
                 sql,
@@ -76,7 +80,7 @@ async def create_sensor_data(data: sensor_data.SensorData):
                 insert into locations(
                     location_at, latitude, longitude, accuracy,
                     altitude, speed, speed_accuracy, heading, device_id, mode)
-                values (%s, %s, %s , %s, %s, %s, %s, %s, %s, %s)
+                values (%s, %s, %s , %s, %s, %s, %s, %s, %s, %s) returning id
                 """
                 cursor.execute(
                     sql,
@@ -93,15 +97,11 @@ async def create_sensor_data(data: sensor_data.SensorData):
                         0,  # modeが不明な場合は0を使用
                     ),
                 )
-                connection.commit()  # データベースに変更を保存
+                # 取得したIDを変数に格納
+                inserted_id = cursor.fetchone()[0]
+                # connection.commit()  # データベースに変更を保存
 
-            return JSONResponse(status_code=200, content={"message": "SensorData successfully registered."})
-
-            # if device is None:
-            #     cursor.execute(f"insert into sensor_data(device_id) values ('{data.device_id}')")
-            #     return JSONResponse(status_code=200, content={"message": "Device successfully registered."})
-            # else:
-            #     return JSONResponse(status_code=409, content={"error": "The device_id is already registered."})
+            return JSONResponse(status_code=200, content={"message": "SensorData successfully registered.", "id": inserted_id})
 
 
 # @router.put("/{id}")

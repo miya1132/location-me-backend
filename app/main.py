@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import os
 from datetime import datetime, timedelta
 
 import pandas_datareader.data as data
@@ -16,13 +17,12 @@ from dateutil.relativedelta import relativedelta
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from googletrans import Translator
+from PIL import Image
 from pydantic import BaseModel
 from pywebpush import WebPushException, webpush
 from schemas import subscription as Schemas
-
-# VAPID_PRIVATE_KEY = "TUlHSEFnRUFNQk1HQnlxR1NNNDlBZ0VHQ0NxR1NNNDlBd0VIQkcwd2F3SUJBUVFnTlZOVGJocDhrV3J4a1VDbQ0KWGFQQitvdHZnbDZYNkxJbllxYm1Uemdtcnc2aFJBTkNBQVRublArOVpSMHltN09sMzdPREVaU1U1U1hXbDBJaA0KOVEvcEtqcmRnb0UyenE1dkhsZ1pOZDlYZnRoNi9wcUN5VS9veC9SQnZHWHg1VUdqM1d6KzFXOXM="  # noqa: E501
-# VAPID_EMAIL = "mailto:miya1132@gmail.com"
 
 # notifications: list[Schemas.Notification] = []
 
@@ -48,6 +48,48 @@ app.include_router(devices_router.router, prefix="/devices", tags=["子機"])
 app.include_router(sensor_data_router.router, prefix="/sensor_data", tags=["センサー"])
 
 notifications: list[Schemas.Notification] = []
+
+# 画像保存先のディレクトリ
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# アップロードディレクトリを静的ファイルとしてマウント
+# https://cowboy-t.net:8080/download/20241120030843_esp32-cam.jpg
+app.mount("/download", StaticFiles(directory=UPLOAD_DIR), name="download")
+
+
+# 画像のアップロードエンドポイント
+@app.post("/upload")
+async def upload_image(imageFile: UploadFile = File(...)):
+    # ファイル名の取得
+    filename = imageFile.filename
+    # ファイル内容をバイトで読み込む
+    image_data = await imageFile.read()
+
+    # filename = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{filename}"
+    filename = f"{filename}"
+    filepath = os.path.join(UPLOAD_DIR, filename)
+
+    # 必要に応じて画像を保存する
+    # with open(f"uploads/uploaded_{filename}", "wb") as f:
+    with open(filepath, "wb") as f:
+        f.write(image_data)
+
+    # 画像データをPILで開く場合（オプション）
+    image = Image.open(io.BytesIO(image_data))
+    image.show()  # 画像を表示（オプション）
+
+    return JSONResponse(content={"message": "Image uploaded successfully", "filename": filename})
+
+
+# # 画像のダウンロードエンドポイント
+# @app.get("/download/{filename}")
+# def download_image(filename: str):
+#     filepath = os.path.join(UPLOAD_DIR, filename)
+#     if not os.path.exists(filepath):
+#         return {"error": "File not found"}
+
+#     return FileResponse(filepath, media_type="image/jpeg", filename=filename)
 
 
 # TODO：apisに移動させる
